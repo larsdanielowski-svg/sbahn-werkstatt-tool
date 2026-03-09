@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>S-Bahn Werkstatt Tool — Admin</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="shared.js"></script>
+</head>
+<body>
+  <div id="topbar"></div>
+
+  <div class="page-wrapper">
+    <div class="content">
+      <div class="container">
+
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title">⚙️ Admin Panel</div>
+          </div>
+        </div>
+
+        <div class="tabs" id="adminTabs">
+          <button class="tab active" data-tab="users">👥 Benutzer</button>
+          <button class="tab" data-tab="pending">📨 Anfragen</button>
+          <button class="tab" data-tab="entries">📝 Einträge</button>
+        </div>
+
+        <!-- Users Tab -->
+        <div id="usersTab" class="tab-content">
+          <div id="usersList">
+            <div class="empty-state">
+              <div class="empty-state-icon">👥</div>
+              <div class="empty-state-title">Lade Benutzer...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pending Tab -->
+        <div id="pendingTab" class="tab-content hidden">
+          <div id="pendingList">
+            <div class="empty-state">
+              <div class="empty-state-icon">📨</div>
+              <div class="empty-state-title">Keine offenen Anfragen</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Entries Tab -->
+        <div id="entriesTab" class="tab-content hidden">
+          <div class="card">
+            <div class="form-group">
+              <label class="form-label">Benutzer auswählen</label>
+              <select class="form-select" id="entriesUserSelect">
+                <option value="">Benutzer wählen...</option>
+              </select>
+            </div>
+          </div>
+          <div id="userEntriesList"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="bottomNav"></div>
+
+  <script>
+    const user = requireLogin();
+    if (!user) throw new Error('Not logged in');
+    if (!isAdmin()) {
+      showToast('Keine Admin-Berechtigung', 'error');
+      window.location.href = 'app.html';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initSupabase();
+
+      document.getElementById('topbar').innerHTML = renderTopbar('Admin');
+      document.getElementById('bottomNav').innerHTML = renderBottomNav('');
+
+      setupTabs();
+      loadUsers();
+      loadPending();
+      loadUserOptions();
+    });
+
+    function setupTabs() {
+      const tabs = document.querySelectorAll('#adminTabs .tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+
+          document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.add('hidden');
+          });
+
+          document.getElementById(tab.dataset.tab + 'Tab').classList.remove('hidden');
+        });
+      });
+    }
+
+    async function loadUsers() {
+      try {
+        const { data, error } = await sb
+          .from('users')
+          .select('*')
+          .eq('status', 'active')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const container = document.getElementById('usersList');
+        if (!data || data.length === 0) {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Keine Benutzer</div></div>';
+          return;
+        }
+
+        container.innerHTML = data.map(u => `
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">${escapeHtml(u.name)}</div>
+              <span class="badge badge-${u.is_blocked ? 'red' : 'green'}">${u.is_blocked ? 'Gesperrt' : 'Aktiv'}</span>
+            </div>
+            <div class="card-body">
+              <div class="flex gap-2 mb-2">
+                <span class="tag">${u.team || 'Kein Team'}</span>
+                <span class="tag">${u.rolle || 'Kein Gewerk'}</span>
+                <span class="badge badge-blue">${u.permission || 'create'}</span>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn btn-sm btn-secondary" onclick="changePermission('${u.id}', '${u.permission}')">Rechte</button>
+              <button class="btn btn-sm btn-secondary" onclick="toggleBlock('${u.id}', ${!u.is_blocked})">${u.is_blocked ? 'Entsperren' : 'Sperren'}</button>
+              <button class="btn btn-sm btn-ghost" style="color: var(--db-red);" onclick="deleteUser('${u.id}')">Löschen</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading users:', e);
+      }
+    }
+
+    async function loadPending() {
+      try {
+        const { data, error } = await sb
+          .from('users')
+          .select('*')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const container = document.getElementById('pendingList');
+        if (!data || data.length === 0) {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Keine offenen Anfragen</div></div>';
+          return;
+        }
+
+        container.innerHTML = data.map(u => `
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">${escapeHtml(u.name)}</div>
+              <span class="badge badge-yellow">Wartet</span>
+            </div>
+            <div class="card-body">
+              <div class="flex gap-2">
+                <span class="tag">${u.team || 'Kein Team'}</span>
+                <span class="tag">${u.rolle || 'Kein Gewerk'}</span>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn btn-sm btn-success" onclick="approveUser('${u.id}')">✓ Freigeben</button>
+              <button class="btn btn-sm btn-secondary" onclick="rejectUser('${u.id}')">✕ Ablehnen</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading pending:', e);
+      }
+    }
+
+    async function approveUser(userId) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      try {
+        const { error } = await sb
+          .from('users')
+          .update({ status: 'approved', code: code })
+          .eq('id', userId);
+
+        if (error) throw error;
+        showToast(`Benutzer freigegeben. Code: ${code}`, 'success');
+        loadPending();
+        loadUsers();
+      } catch (e) {
+        showToast('Fehler', 'error');
+      }
+    }
+
+    async function rejectUser(userId) {
+      try {
+        const { error } = await sb.from('users').delete().eq('id', userId);
+        if (error) throw error;
+        showToast('Anfrage abgelehnt', 'success');
+        loadPending();
+      } catch (e) {
+        showToast('Fehler', 'error');
+      }
+    }
+
+    async function changePermission(userId, currentPermission) {
+      const permissions = ['view', 'create', 'edit'];
+      const currentIndex = permissions.indexOf(currentPermission);
+      const nextPermission = permissions[(currentIndex + 1) % permissions.length];
+
+      try {
+        const { error } = await sb
+          .from('users')
+          .update({ permission: nextPermission })
+          .eq('id', userId);
+
+        if (error) throw error;
+        showToast(`Rechte geändert zu: ${nextPermission}`, 'success');
+        loadUsers();
+      } catch (e) {
+        showToast('Fehler', 'error');
+      }
+    }
+
+    async function toggleBlock(userId, shouldBlock) {
+      try {
+        const { error } = await sb
+          .from('users')
+          .update({ is_blocked: shouldBlock })
+          .eq('id', userId);
+
+        if (error) throw error;
+        showToast(shouldBlock ? 'Benutzer gesperrt' : 'Benutzer entsperrt', 'success');
+        loadUsers();
+      } catch (e) {
+        showToast('Fehler', 'error');
+      }
+    }
+
+    async function deleteUser(userId) {
+      if (!confirm('Benutzer wirklich löschen?')) return;
+
+      try {
+        const { error } = await sb.from('users').delete().eq('id', userId);
+        if (error) throw error;
+        showToast('Benutzer gelöscht', 'success');
+        loadUsers();
+      } catch (e) {
+        showToast('Fehler', 'error');
+      }
+    }
+
+    async function loadUserOptions() {
+      try {
+        const { data, error } = await sb.from('users').select('id, name').eq('status', 'active');
+        if (error) throw error;
+
+        const select = document.getElementById('entriesUserSelect');
+        select.innerHTML = '<option value="">Benutzer wählen...</option>' +
+          data.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+
+        select.addEventListener('change', (e) => {
+          if (e.target.value) loadUserEntries(e.target.value);
+        });
+      } catch (e) {
+        console.error('Error loading user options:', e);
+      }
+    }
+
+    async function loadUserEntries(userId) {
+      try {
+        const { data: userData } = await sb.from('users').select('name').eq('id', userId).single();
+        const userName = userData?.name;
+
+        const [materials, fehler, notes] = await Promise.all([
+          sb.from('materials').select('*').eq('eingetragen', userName),
+          sb.from('fehler').select('*').eq('erstellt_von', userName),
+          sb.from('notes').select('*').eq('user_name', userName)
+        ]);
+
+        const container = document.getElementById('userEntriesList');
+        let html = '<h3 style="margin: 16px 0;">📦 Material</h3>';
+        if (materials.data?.length) {
+          html += materials.data.map(m => `
+            <div class="card">
+              <div class="card-title">${m.name}</div>
+              <div class="card-subtitle">${formatDate(m.created_at)}</div>
+            </div>
+          `).join('');
+        } else {
+          html += '<p style="color: var(--text2);">Keine Einträge</p>';
+        }
+
+        html += '<h3 style="margin: 16px 0;">🔴 Fehler</h3>';
+        if (fehler.data?.length) {
+          html += fehler.data.map(f => `
+            <div class="card">
+              <div class="card-title">${f.title}</div>
+              <div class="card-subtitle">${formatDate(f.created_at)}</div>
+            </div>
+          `).join('');
+        } else {
+          html += '<p style="color: var(--text2);">Keine Einträge</p>';
+        }
+
+        container.innerHTML = html;
+      } catch (e) {
+        console.error('Error loading user entries:', e);
+      }
+    }
+  </script>
+</body>
+</html>

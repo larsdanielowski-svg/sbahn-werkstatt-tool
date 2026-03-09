@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>S-Bahn Werkstatt Tool — Material</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="shared.js"></script>
+</head>
+<body>
+  <div id="topbar"></div>
+
+  <div class="page-wrapper">
+    <div class="content">
+      <div class="container">
+
+        <!-- Search -->
+        <div class="section">
+          <div class="search-wrapper">
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input type="text" class="search-input" id="materialSearch" placeholder="Material suchen..." autocomplete="off">
+          </div>
+
+          <!-- Filters -->
+          <div class="checkbox-group mb-3">
+            <button class="checkbox-item" data-filter="all">Alle</button>
+            <button class="checkbox-item" data-filter="423">BR 423</button>
+            <button class="checkbox-item" data-filter="425">BR 425</button>
+            <button class="checkbox-item" data-filter="430">BR 430</button>
+            <button class="checkbox-item" data-filter="Schlosser">🔧 Schlosser</button>
+            <button class="checkbox-item" data-filter="Elektroniker">⚡ Elektroniker</button>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div class="section">
+          <div id="materialList">
+            <div class="empty-state">
+              <div class="empty-state-icon">🔍</div>
+              <div class="empty-state-title">Suche nach Material</div>
+              <div class="empty-state-text">Gib einen Begriff ein um Material zu finden</div>
+            </div>
+          </div>
+          <div class="text-center mt-3 hidden" id="loadMoreWrapper">
+            <button class="btn btn-secondary" id="loadMoreBtn">Mehr laden</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="bottomNav"></div>
+
+  <!-- FAB for new material -->
+  <button class="fab" id="fabNewMaterial" onclick="openModal('newMaterialModal')">+</button>
+
+  <!-- New Material Modal -->
+  <div class="modal-overlay" id="newMaterialModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">➕ Neues Material</div>
+        <button class="modal-close" onclick="closeModal('newMaterialModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="newMaterialForm">
+          <div class="form-group">
+            <label class="form-label">Name *</label>
+            <input type="text" class="form-input" name="name" required placeholder="z.B. Steckkarte 41 023">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">SAP-Nummer</label>
+            <input type="text" class="form-input" name="sap" placeholder="z.B. 769451">
+            <p class="form-hint" id="sapHint"></p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Gewerk *</label>
+            <select class="form-select" name="gewerk" required>
+              <option value="">Gewerk wählen...</option>
+              <option value="Schlosser">🔧 Schlosser</option>
+              <option value="Elektroniker">⚡ Elektroniker</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Shuttle / Lagerort</label>
+            <select class="form-select" name="shuttle">
+              <option value="">Ort wählen...</option>
+              <option value="Shuttle 1">Shuttle 1</option>
+              <option value="Shuttle 2">Shuttle 2</option>
+              <option value="Shuttle 3">Shuttle 3</option>
+              <option value="Shuttle 4">Shuttle 4</option>
+              <option value="Lager A">Lager A</option>
+              <option value="Lager B">Lager B</option>
+              <option value="Lager C">Lager C</option>
+              <option value="Werkstatt">Werkstatt</option>
+              <option value="Büro">Büro</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Tablar / Regal</label>
+            <input type="text" class="form-input" name="tablar" placeholder="z.B. Fach 12">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Baureihen</label>
+            <div class="checkbox-group">
+              <button type="button" class="checkbox-item" data-baureihe="423">423</button>
+              <button type="button" class="checkbox-item" data-baureihe="425">425</button>
+              <button type="button" class="checkbox-item" data-baureihe="430">430</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Notiz</label>
+            <textarea class="form-textarea" name="notiz" placeholder="Zusätzliche Informationen..."></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('newMaterialModal')">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="saveMaterialBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Material Detail Modal -->
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">📦 Material</div>
+        <button class="modal-close" onclick="closeModal('detailModal')">✕</button>
+      </div>
+      <div class="modal-body" id="detailContent">
+        <!-- Dynamic content -->
+      </div>
+      <div class="modal-footer" id="detailFooter">
+        <!-- Dynamic content -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const user = requireLogin();
+    if (!user) throw new Error('Not logged in');
+
+    let currentPage = 0;
+    const perPage = 50;
+    let currentFilter = 'all';
+    let selectedBaureihen = [];
+    let searchQuery = '';
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      initSupabase();
+
+      document.getElementById('topbar').innerHTML = renderTopbar('Material');
+      document.getElementById('bottomNav').innerHTML = renderBottomNav('material');
+
+      // Wait for permissions to load before checking UI visibility
+      await checkUserStatus();
+      startPermissionCheck();
+
+      // Check permissions after status is loaded
+      if (!canCreate()) {
+        document.getElementById('fabNewMaterial').classList.add('hidden');
+      } else {
+        console.log('User can create materials');
+      }
+
+      // Check URL params for ID
+      const urlParams = new URLSearchParams(window.location.search);
+      const materialId = urlParams.get('id');
+      if (materialId) {
+        openMaterialDetail(materialId);
+      }
+
+      setupSearch();
+      setupFilters();
+      setupBaureihenSelection();
+      setupForm();
+      loadMaterials();
+    });
+
+    function setupSearch() {
+      const searchInput = document.getElementById('materialSearch');
+      let debounceTimer;
+
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.trim();
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          currentPage = 0;
+          loadMaterials();
+        }, 300);
+      });
+    }
+
+    function setupFilters() {
+      const filterButtons = document.querySelectorAll('.checkbox-group .checkbox-item[data-filter]');
+      filterButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          filterButtons.forEach(b => b.classList.remove('checked'));
+          btn.classList.add('checked');
+          currentFilter = btn.dataset.filter;
+          currentPage = 0;
+          loadMaterials();
+        });
+      });
+      filterButtons[0].classList.add('checked');
+    }
+
+    function setupBaureihenSelection() {
+      const buttons = document.querySelectorAll('#newMaterialModal .checkbox-item[data-baureihe]');
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          btn.classList.toggle('checked');
+          const br = btn.dataset.baureihe;
+          if (btn.classList.contains('checked')) {
+            if (!selectedBaureihen.includes(br)) selectedBaureihen.push(br);
+          } else {
+            selectedBaureihen = selectedBaureihen.filter(b => b !== br);
+          }
+        });
+      });
+    }
+
+    function setupForm() {
+      const sapInput = document.querySelector('input[name="sap"]');
+      sapInput.addEventListener('blur', async () => {
+        const sap = sapInput.value.trim();
+        if (!sap) return;
+
+        const { data } = await sb.from('materials').select('id').eq('sap', sap).maybeSingle();
+        const hint = document.getElementById('sapHint');
+        if (data) {
+          hint.textContent = '⚠️ Diese SAP-Nummer existiert bereits!';
+          hint.style.color = 'var(--orange)';
+        } else {
+          hint.textContent = '';
+        }
+      });
+
+      document.getElementById('saveMaterialBtn').addEventListener('click', async () => {
+        const saveBtn = document.getElementById('saveMaterialBtn');
+        const form = document.getElementById('newMaterialForm');
+        const formData = getFormData('newMaterialForm');
+
+        // Validation
+        if (!formData.name || !formData.name.trim()) {
+          showToast('Name ist erforderlich', 'error');
+          return;
+        }
+        if (!formData.gewerk) {
+          showToast('Gewerk ist erforderlich', 'error');
+          return;
+        }
+
+        // Check Supabase is initialized
+        if (!sb) {
+          showToast('Verbindungsfehler - bitte Seite neu laden', 'error');
+          return;
+        }
+
+        // Show loading state
+        const originalText = saveBtn.textContent;
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Speichert...';
+
+        try {
+          const insertData = {
+            name: formData.name.trim(),
+            sap: formData.sap ? formData.sap.trim() : null,
+            gewerk: formData.gewerk,
+            shuttle: formData.shuttle || null,
+            tablar: formData.tablar ? formData.tablar.trim() : null,
+            baureihen: selectedBaureihen.length > 0 ? selectedBaureihen : null,
+            eingetragen: user.name,
+            notiz: formData.notiz ? formData.notiz.trim() : null
+          };
+
+          console.log('Inserting material:', insertData);
+
+          const { data, error } = await sb.from('materials').insert([insertData]).select();
+
+          if (error) {
+            console.error('Supabase error:', error);
+            throw new Error(error.message || 'Datenbankfehler');
+          }
+
+          console.log('Material saved successfully:', data);
+          showToast('Material gespeichert', 'success');
+          closeModal('newMaterialModal');
+          form.reset();
+          selectedBaureihen = [];
+          document.querySelectorAll('#newMaterialModal .checkbox-item').forEach(b => b.classList.remove('checked'));
+          loadMaterials();
+        } catch (e) {
+          console.error('Error saving material:', e);
+          showToast('Fehler beim Speichern: ' + (e.message || 'Unbekannter Fehler'), 'error');
+        } finally {
+          // Restore button state
+          saveBtn.disabled = false;
+          saveBtn.textContent = originalText;
+        }
+      });
+    }
+
+    async function loadMaterials() {
+      try {
+        let query = sb.from('materials').select('*');
+
+        // Apply search
+        if (searchQuery) {
+          query = query.or(`name.ilike.%${searchQuery}%,sap.ilike.%${searchQuery}%`);
+        }
+
+        // Apply filter
+        if (currentFilter !== 'all') {
+          if (['423', '425', '430'].includes(currentFilter)) {
+            query = query.contains('baureihen', [currentFilter]);
+          } else {
+            query = query.eq('gewerk', currentFilter);
+          }
+        }
+
+        query = query
+          .order('created_at', { ascending: false })
+          .range(currentPage * perPage, (currentPage + 1) * perPage - 1);
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        const container = document.getElementById('materialList');
+
+        if (!data || data.length === 0) {
+          if (currentPage === 0) {
+            container.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-state-icon">📦</div>
+                <div class="empty-state-title">Keine Materialien gefunden</div>
+                <div class="empty-state-text">${searchQuery ? 'Versuche einen anderen Suchbegriff' : 'Füge das erste Material hinzu'}</div>
+              </div>
+            `;
+          }
+          document.getElementById('loadMoreWrapper').classList.add('hidden');
+          return;
+        }
+
+        const html = data.map(m => `
+          <div class="card card-clickable" onclick="openMaterialDetail('${m.id}')">
+            <div class="card-header">
+              <div class="card-title">
+                📦 ${escapeHtml(m.name)}
+                ${m.gewerk === 'Schlosser' ? '<span class="badge badge-orange">🔧 Schlosser</span>' : '<span class="badge badge-cyan">⚡ Elektroniker</span>'}
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="flex flex-col gap-2">
+                ${m.sap ? `<div><span class="mono">SAP: ${m.sap}</span></div>` : ''}
+                ${m.shuttle ? `<div>📍 ${m.shuttle}${m.tablar ? ' / ' + m.tablar : ''}</div>` : ''}
+                ${m.baureihen && m.baureihen.length > 0 ? `<div class="mt-1">${m.baureihen.map(br => `<span class="tag">BR ${br}</span>`).join(' ')}</div>` : ''}
+              </div>
+            </div>
+          </div>
+        `).join('');
+
+        if (currentPage === 0) {
+          container.innerHTML = html;
+        } else {
+          container.innerHTML += html;
+        }
+
+        document.getElementById('loadMoreWrapper').classList.remove('hidden');
+        currentPage++;
+      } catch (e) {
+        console.error('Error loading materials:', e);
+        showToast('Fehler beim Laden', 'error');
+      }
+    }
+
+    async function openMaterialDetail(id) {
+      try {
+        const { data, error } = await sb.from('materials').select('*').eq('id', id).single();
+        if (error || !data) {
+          showToast('Material nicht gefunden', 'error');
+          return;
+        }
+
+        const content = document.getElementById('detailContent');
+        const footer = document.getElementById('detailFooter');
+
+        content.innerHTML = `
+          <div class="mb-4">
+            <h2 style="font-size: 1.3rem; font-weight: 600;">${escapeHtml(data.name)}</h2>
+            ${data.gewerk === 'Schlosser' ? '<span class="badge badge-orange">🔧 Schlosser</span>' : '<span class="badge badge-cyan">⚡ Elektroniker</span>'}
+          </div>
+
+          ${data.sap ? `
+            <div class="form-group">
+              <label class="form-label">SAP-Nummer</label>
+              <div class="flex items-center gap-2">
+                <span class="mono" style="font-size: 1.1rem;">${data.sap}</span>
+                <button class="btn btn-sm btn-secondary" onclick="copyToClipboard('${data.sap}')">Kopieren</button>
+                <button class="btn btn-sm btn-secondary" onclick="toggleBarcode('barcodeWrapper', '${data.sap}')">📊 Barcode</button>
+              </div>
+              <div id="barcodeWrapper" class="barcode-wrapper">
+                <canvas id="barcodeCanvas" class="barcode-canvas"></canvas>
+              </div>
+            </div>
+          ` : ''}
+
+          ${data.shuttle ? `
+            <div class="form-group">
+              <label class="form-label">Lagerort</label>
+              <div>📍 ${data.shuttle}${data.tablar ? ' / Tablar ' + data.tablar : ''}</div>
+            </div>
+          ` : ''}
+
+          ${data.baureihen && data.baureihen.length > 0 ? `
+            <div class="form-group">
+              <label class="form-label">Baureihen</label>
+              <div>${data.baureihen.map(br => `<span class="badge badge-blue">BR ${br}</span>`).join(' ')}</div>
+            </div>
+          ` : ''}
+
+          ${data.notiz ? `
+            <div class="form-group">
+              <label class="form-label">Notiz</label>
+              <div style="color: var(--text2);">${escapeHtml(data.notiz)}</div>
+            </div>
+          ` : ''}
+
+          <div class="form-group">
+            <label class="form-label">Eingetragen von</label>
+            <div style="color: var(--text3); font-size: 0.9rem;">${data.eingetragen} • ${formatDate(data.created_at)}</div>
+          </div>
+        `;
+
+        footer.innerHTML = `
+          <button type="button" class="btn btn-secondary" onclick="closeModal('detailModal')">Schließen</button>
+          ${canEdit() || data.eingetragen === user.name ? `
+            <button type="button" class="btn btn-primary" onclick="editMaterial('${data.id}')">✏️ Bearbeiten</button>
+            <button type="button" class="btn btn-ghost" style="color: var(--db-red);" onclick="deleteMaterial('${data.id}')">🗑️ Löschen</button>
+          ` : ''}
+        `;
+
+        openModal('detailModal');
+      } catch (e) {
+        console.error('Error loading material detail:', e);
+        showToast('Fehler beim Laden', 'error');
+      }
+    }
+
+    async function deleteMaterial(id) {
+      if (!confirm('Material wirklich löschen?')) return;
+
+      try {
+        const { error } = await sb.from('materials').delete().eq('id', id);
+        if (error) throw error;
+        showToast('Material gelöscht', 'success');
+        closeModal('detailModal');
+        loadMaterials();
+      } catch (e) {
+        showToast('Fehler beim Löschen', 'error');
+      }
+    }
+
+    function editMaterial(id) {
+      // For now, just open a prompt-based edit
+      // In a full implementation, this would open an edit modal
+      showToast('Bearbeiten kommt bald', 'info');
+    }
+
+    document.getElementById('loadMoreBtn').addEventListener('click', loadMaterials);
+  </script>
+</body>
+</html>

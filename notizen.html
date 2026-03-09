@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>S-Bahn Werkstatt Tool — Notizen</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="shared.js"></script>
+</head>
+<body>
+  <div id="topbar"></div>
+
+  <div class="page-wrapper">
+    <div class="content">
+      <div class="container">
+
+        <div class="tabs" id="notesTabs">
+          <button class="tab active" data-tab="wichtig">📌 Wichtig</button>
+          <button class="tab" data-tab="notizen">📝 Notizen</button>
+          <button class="tab" data-tab="fristen">🔧 Fristen</button>
+        </div>
+
+        <!-- Wichtig Tab -->
+        <div id="wichtigTab" class="tab-content">
+          <div class="card">
+            <div class="form-group">
+              <input type="text" class="form-input" id="quickNoteInput" placeholder="Schnelle Erinnerung hinzufügen...">
+            </div>
+            <button class="btn btn-primary btn-block" onclick="addQuickNote()">➕ Hinzufügen</button>
+          </div>
+
+          <div id="quickNotesList">
+            <div class="empty-state">
+              <div class="empty-state-icon">📌</div>
+              <div class="empty-state-title">Keine wichtigen Erinnerungen</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notizen Tab -->
+        <div id="notizenTab" class="tab-content hidden">
+          <div class="card">
+            <div class="form-group">
+              <label class="form-label">Titel</label>
+              <input type="text" class="form-input" id="noteTitle" placeholder="Titel der Notiz">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Inhalt</label>
+              <textarea class="form-textarea" id="noteContent" placeholder="Deine Notiz..."></textarea>
+            </div>
+            <button class="btn btn-primary btn-block" onclick="addNote()">📝 Notiz speichern</button>
+          </div>
+
+          <div id="notesList">
+            <div class="empty-state">
+              <div class="empty-state-icon">📝</div>
+              <div class="empty-state-title">Keine Notizen</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fristen Tab -->
+        <div id="fristenTab" class="tab-content hidden">
+          <div class="card">
+            <div class="form-group">
+              <label class="form-label">Zugnummer</label>
+              <input type="text" class="form-input" id="fristZugnummer" placeholder="z.B. 423 137">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Typ</label>
+              <select class="form-select" id="fristTyp">
+                <option value="">Typ wählen...</option>
+                <option value="Nachschau">🔍 Nachschau</option>
+                <option value="Frist 1">🔧 Frist 1</option>
+                <option value="Frist 2">🔧 Frist 2</option>
+                <option value="Frist 3">🔧 Frist 3</option>
+                <option value="Frist 4">🔧 Frist 4</option>
+                <option value="Frist 5">🔧 Frist 5</option>
+                <option value="Frist 6">🔧 Frist 6</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Mängel</label>
+              <div id="maengelList"></div>
+              <button type="button" class="btn btn-secondary btn-sm mt-2" onclick="addMangelField()">➕ Mangel hinzufügen</button>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Weitere Notizen</label>
+              <textarea class="form-textarea" id="fristNotizen" placeholder="Weitere Informationen..."></textarea>
+            </div>
+
+            <button class="btn btn-primary btn-block" onclick="saveFrist()">💾 Frist speichern</button>
+          </div>
+
+          <div id="fristenList">
+            <div class="empty-state">
+              <div class="empty-state-icon">🔧</div>
+              <div class="empty-state-title">Keine Fristen</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="bottomNav"></div>
+
+  <script>
+    const user = requireLogin();
+    if (!user) throw new Error('Not logged in');
+
+    let maengelCount = 0;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initSupabase();
+      startPermissionCheck();
+
+      document.getElementById('topbar').innerHTML = renderTopbar('Notizen');
+      document.getElementById('bottomNav').innerHTML = renderBottomNav('notizen');
+
+      setupTabs();
+      loadQuickNotes();
+      loadNotes();
+      loadFristen();
+    });
+
+    function setupTabs() {
+      const tabs = document.querySelectorAll('#notesTabs .tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+
+          document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.add('hidden');
+          });
+
+          document.getElementById(tab.dataset.tab + 'Tab').classList.remove('hidden');
+        });
+      });
+    }
+
+    // Quick Notes (Wichtig)
+    async function loadQuickNotes() {
+      try {
+        const { data, error } = await sb
+          .from('notes')
+          .select('*')
+          .eq('user_name', user.name)
+          .eq('type', 'wichtig')
+          .order('is_done', { ascending: true })
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const container = document.getElementById('quickNotesList');
+        if (!data || data.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">📌</div>
+              <div class="empty-state-title">Keine wichtigen Erinnerungen</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = data.map(n => `
+          <div class="checklist-item ${n.is_done ? 'done' : ''}">
+            <div class="checklist-checkbox ${n.is_done ? 'checked' : ''}" onclick="toggleQuickNote('${n.id}', ${!n.is_done})">
+              ${n.is_done ? '✓' : ''}
+            </div>
+            <div class="checklist-content">
+              <div class="checklist-text">${escapeHtml(n.content)}</div>
+              ${n.is_done ? `<div class="checklist-meta">✓ Erledigt</div>` : ''}
+            </div>
+            <button class="btn btn-ghost btn-icon" onclick="deleteNote('${n.id}')" style="color: var(--text3);">🗑️</button>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading quick notes:', e);
+      }
+    }
+
+    async function addQuickNote() {
+      const input = document.getElementById('quickNoteInput');
+      const content = input.value.trim();
+      if (!content) return;
+
+      try {
+        const { error } = await sb.from('notes').insert([{
+          user_name: user.name,
+          type: 'wichtig',
+          content: content
+        }]);
+
+        if (error) throw error;
+        input.value = '';
+        loadQuickNotes();
+        showToast('Erinnerung hinzugefügt', 'success');
+      } catch (e) {
+        showToast('Fehler beim Speichern', 'error');
+      }
+    }
+
+    async function toggleQuickNote(id, isDone) {
+      try {
+        await sb.from('notes').update({
+          is_done: isDone,
+          done_at: isDone ? new Date().toISOString() : null
+        }).eq('id', id);
+        loadQuickNotes();
+      } catch (e) {
+        showToast('Fehler beim Aktualisieren', 'error');
+      }
+    }
+
+    // Regular Notes
+    async function loadNotes() {
+      try {
+        const { data, error } = await sb
+          .from('notes')
+          .select('*')
+          .eq('user_name', user.name)
+          .eq('type', 'note')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const container = document.getElementById('notesList');
+        if (!data || data.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">📝</div>
+              <div class="empty-state-title">Keine Notizen</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = data.map(n => `
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">${escapeHtml(n.title || 'Notiz')}</div>
+              <button class="btn btn-ghost btn-icon" onclick="deleteNote('${n.id}')" style="color: var(--text3);">🗑️</button>
+            </div>
+            <div class="card-body">
+              <div>${escapeHtml(n.content)}</div>
+              <div style="color: var(--text3); font-size: 0.85rem; margin-top: 8px;">${formatDate(n.created_at)}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading notes:', e);
+      }
+    }
+
+    async function addNote() {
+      const title = document.getElementById('noteTitle').value.trim();
+      const content = document.getElementById('noteContent').value.trim();
+
+      if (!content) {
+        showToast('Inhalt ist erforderlich', 'error');
+        return;
+      }
+
+      try {
+        const { error } = await sb.from('notes').insert([{
+          user_name: user.name,
+          type: 'note',
+          title: title || 'Notiz',
+          content: content
+        }]);
+
+        if (error) throw error;
+        document.getElementById('noteTitle').value = '';
+        document.getElementById('noteContent').value = '';
+        loadNotes();
+        showToast('Notiz gespeichert', 'success');
+      } catch (e) {
+        showToast('Fehler beim Speichern', 'error');
+      }
+    }
+
+    // Fristen
+    function addMangelField() {
+      maengelCount++;
+      const container = document.getElementById('maengelList');
+      const div = document.createElement('div');
+      div.className = 'card mt-2';
+      div.innerHTML = `
+        <div class="form-group">
+          <input type="text" class="form-input" placeholder="Beschreibung des Mangels">
+        </div>
+        <div class="form-group">
+          <select class="form-select">
+            <option value="leicht">Leicht</option>
+            <option value="mittel">Mittel</option>
+            <option value="schwer">Schwer</option>
+          </select>
+        </div>
+      `;
+      container.appendChild(div);
+    }
+
+    async function saveFrist() {
+      const zugnummer = document.getElementById('fristZugnummer').value.trim();
+      const typ = document.getElementById('fristTyp').value;
+      const notizen = document.getElementById('fristNotizen').value.trim();
+
+      if (!zugnummer || !typ) {
+        showToast('Zugnummer und Typ sind erforderlich', 'error');
+        return;
+      }
+
+      try {
+        const { error } = await sb.from('notes').insert([{
+          user_name: user.name,
+          type: typ.includes('Frist') ? 'frist' : 'nachschau',
+          title: `${typ} ${zugnummer}`,
+          zugnummer: zugnummer,
+          frist_typ: typ,
+          content: notizen
+        }]);
+
+        if (error) throw error;
+        document.getElementById('fristZugnummer').value = '';
+        document.getElementById('fristTyp').value = '';
+        document.getElementById('fristNotizen').value = '';
+        document.getElementById('maengelList').innerHTML = '';
+        loadFristen();
+        showToast('Frist gespeichert', 'success');
+      } catch (e) {
+        showToast('Fehler beim Speichern', 'error');
+      }
+    }
+
+    async function loadFristen() {
+      try {
+        const { data, error } = await sb
+          .from('notes')
+          .select('*')
+          .eq('user_name', user.name)
+          .in('type', ['frist', 'nachschau'])
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const container = document.getElementById('fristenList');
+        if (!data || data.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">🔧</div>
+              <div class="empty-state-title">Keine Fristen</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = data.map(n => `
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                ${n.type === 'frist' ? '🔧' : '🔍'} ${escapeHtml(n.title)}
+              </div>
+              <button class="btn btn-ghost btn-icon" onclick="deleteNote('${n.id}')" style="color: var(--text3);">🗑️</button>
+            </div>
+            <div class="card-body">
+              ${n.content ? `<div>${escapeHtml(n.content)}</div>` : ''}
+              <div style="color: var(--text3); font-size: 0.85rem; margin-top: 8px;">${formatDate(n.created_at)}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading fristen:', e);
+      }
+    }
+
+    async function deleteNote(id) {
+      if (!confirm('Eintrag löschen?')) return;
+
+      try {
+        const { error } = await sb.from('notes').delete().eq('id', id);
+        if (error) throw error;
+        loadQuickNotes();
+        loadNotes();
+        loadFristen();
+        showToast('Eintrag gelöscht', 'success');
+      } catch (e) {
+        showToast('Fehler beim Löschen', 'error');
+      }
+    }
+
+    // Enter key for quick note
+    document.getElementById('quickNoteInput')?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') addQuickNote();
+    });
+  </script>
+</body>
+</html>

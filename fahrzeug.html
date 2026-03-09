@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>S-Bahn Werkstatt Tool — Fahrzeug</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="shared.js"></script>
+</head>
+<body>
+  <div id="topbar"></div>
+
+  <div class="page-wrapper">
+    <div class="content">
+      <div class="container">
+
+        <div id="startSessionSection">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">🚆 Neues Fahrzeug starten</div>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Zugnummer</label>
+                <input type="text" class="form-input" id="sessionZugnummer" placeholder="z.B. 425 031">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Baureihe</label>
+                <select class="form-select" id="sessionBaureihe">
+                  <option value="">Baureihe wählen...</option>
+                  <option value="423">BR 423</option>
+                  <option value="425">BR 425</option>
+                  <option value="430">BR 430</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Auftragsart</label>
+                <select class="form-select" id="sessionAuftragsart">
+                  <option value="">Art wählen...</option>
+                  <option value="Nachschau">🔍 Nachschau</option>
+                  <option value="Frist 3">🔧 Frist 3</option>
+                  <option value="Frist 4">🔧 Frist 4</option>
+                  <option value="Frist 5">🔧 Frist 5</option>
+                  <option value="Frist 6">🔧 Frist 6</option>
+                  <option value="Störung">🔴 Störung</option>
+                </select>
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn btn-primary btn-block" onclick="startSession()">🚀 Session starten</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="activeSessionSection" class="hidden">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                🚆 <span id="activeZugnummer"></span>
+                <span class="live-indicator">
+                  <span class="live-dot"></span>
+                  Live
+                </span>
+              </div>
+              <div class="card-subtitle">
+                <span id="activeAuftragsart"></span> • <span id="activeTeam"></span>
+              </div>
+            </div>
+          </div>
+
+          <div id="collaborationAreas">
+            <div class="collab-area">
+              <div class="collab-area-header">
+                <span class="collab-area-icon">🚂</span>
+                Führerstand
+              </div>
+              <div id="entriesFuehrerstand"></div>
+            </div>
+
+            <div class="collab-area">
+              <div class="collab-area-header">
+                <span class="collab-area-icon">🪑</span>
+                Fahrgastraum
+              </div>
+              <div id="entriesFahrgastraum"></div>
+            </div>
+
+            <div class="collab-area">
+              <div class="collab-area-header">
+                <span class="collab-area-icon">⬇️</span>
+                Unterboden
+              </div>
+              <div id="entriesUnterboden"></div>
+            </div>
+
+            <div class="collab-area">
+              <div class="collab-area-header">
+                <span class="collab-area-icon">⚡</span>
+                Technikraum
+              </div>
+              <div id="entriesTechnikraum"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">➕ Eintrag hinzufügen</div>
+            </div>
+            <div class="card-body">
+              <div class="grid-2">
+                <div class="form-group">
+                  <label class="form-label">Bereich</label>
+                  <select class="form-select" id="entryBereich">
+                    <option value="Führerstand">🚂 Führerstand</option>
+                    <option value="Fahrgastraum">🪑 Fahrgastraum</option>
+                    <option value="Unterboden">⬇️ Unterboden</option>
+                    <option value="Dach">⬆️ Dach</option>
+                    <option value="Technikraum">⚡ Technikraum</option>
+                    <option value="Sonstiges">📦 Sonstiges</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Typ</label>
+                  <select class="form-select" id="entryTyp">
+                    <option value="mangel">⚠️ Mangel</option>
+                    <option value="erledigt">✅ Erledigt</option>
+                    <option value="notiz">📝 Notiz</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Beschreibung</label>
+                <input type="text" class="form-input" id="entryBeschreibung" placeholder="Was wurde festgestellt?">
+              </div>
+            </div>
+            <div class="card-footer">
+              <button class="btn btn-primary btn-block" onclick="addEntry()">Eintrag speichern</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title">🚆 Aktive Sessions</div>
+          </div>
+          <div id="activeSessionsList">
+            <div class="empty-state">
+              <div class="empty-state-text">Keine aktiven Sessions</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="bottomNav"></div>
+
+  <script>
+    const user = requireLogin();
+    if (!user) throw new Error('Not logged in');
+
+    let currentSession = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initSupabase();
+      startPermissionCheck();
+
+      document.getElementById('topbar').innerHTML = renderTopbar('Fahrzeug');
+      document.getElementById('bottomNav').innerHTML = renderBottomNav('fahrzeug');
+
+      loadActiveSessions();
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const sessionId = urlParams.get('session');
+      if (sessionId) {
+        joinSession(sessionId);
+      }
+    });
+
+    async function startSession() {
+      const zugnummer = document.getElementById('sessionZugnummer').value.trim();
+      const baureihe = document.getElementById('sessionBaureihe').value;
+      const auftragsart = document.getElementById('sessionAuftragsart').value;
+
+      if (!zugnummer || !auftragsart) {
+        showToast('Zugnummer und Auftragsart sind erforderlich', 'error');
+        return;
+      }
+
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const { data: existing } = await sb
+          .from('fahrzeug_sessions')
+          .select('*')
+          .eq('zugnummer', zugnummer)
+          .eq('datum', today)
+          .eq('status', 'aktiv')
+          .maybeSingle();
+
+        if (existing) {
+          currentSession = existing;
+          showSession();
+          loadEntries();
+          showToast('Bestehender Session beigetreten', 'success');
+          return;
+        }
+
+        const { data, error } = await sb
+          .from('fahrzeug_sessions')
+          .insert([{
+            zugnummer: zugnummer,
+            baureihe: baureihe || null,
+            team: user.team,
+            auftragsart: auftragsart,
+            erstellt_von: user.name,
+            status: 'aktiv'
+          }])
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        currentSession = data;
+        showSession();
+        showToast('Session gestartet', 'success');
+      } catch (e) {
+        console.error('Error starting session:', e);
+        showToast('Fehler beim Starten', 'error');
+      }
+    }
+
+    async function joinSession(sessionId) {
+      try {
+        const { data, error } = await sb
+          .from('fahrzeug_sessions')
+          .select('*')
+          .eq('id', sessionId)
+          .single();
+
+        if (error || !data) {
+          showToast('Session nicht gefunden', 'error');
+          return;
+        }
+
+        currentSession = data;
+        showSession();
+        loadEntries();
+      } catch (e) {
+        showToast('Fehler beim Beitreten', 'error');
+      }
+    }
+
+    function showSession() {
+      document.getElementById('startSessionSection').classList.add('hidden');
+      document.getElementById('activeSessionSection').classList.remove('hidden');
+
+      document.getElementById('activeZugnummer').textContent = currentSession.zugnummer;
+      document.getElementById('activeAuftragsart').textContent = currentSession.auftragsart;
+      document.getElementById('activeTeam').textContent = currentSession.team;
+    }
+
+    async function addEntry() {
+      if (!currentSession) return;
+
+      const bereich = document.getElementById('entryBereich').value;
+      const typ = document.getElementById('entryTyp').value;
+      const beschreibung = document.getElementById('entryBeschreibung').value.trim();
+
+      if (!beschreibung) {
+        showToast('Beschreibung ist erforderlich', 'error');
+        return;
+      }
+
+      try {
+        const { error } = await sb.from('fahrzeug_eintraege').insert([{
+          session_id: currentSession.id,
+          user_name: user.name,
+          bereich: bereich,
+          typ: typ,
+          beschreibung: beschreibung
+        }]);
+
+        if (error) throw error;
+
+        document.getElementById('entryBeschreibung').value = '';
+        loadEntries();
+        showToast('Eintrag hinzugefügt', 'success');
+      } catch (e) {
+        showToast('Fehler beim Speichern', 'error');
+      }
+    }
+
+    async function loadEntries() {
+      if (!currentSession) return;
+
+      try {
+        const { data, error } = await sb
+          .from('fahrzeug_eintraege')
+          .select('*')
+          .eq('session_id', currentSession.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const areas = {
+          'Führerstand': document.getElementById('entriesFuehrerstand'),
+          'Fahrgastraum': document.getElementById('entriesFahrgastraum'),
+          'Unterboden': document.getElementById('entriesUnterboden'),
+          'Technikraum': document.getElementById('entriesTechnikraum')
+        };
+
+        Object.values(areas).forEach(el => { if (el) el.innerHTML = ''; });
+
+        if (!data || data.length === 0) return;
+
+        data.forEach(entry => {
+          const container = areas[entry.bereich];
+          if (!container) return;
+
+          const div = document.createElement('div');
+          div.className = 'checklist-item';
+          div.innerHTML = `
+            <div class="checklist-checkbox ${entry.is_done ? 'checked' : ''}" onclick="toggleEntry('${entry.id}', ${!entry.is_done})">
+              ${entry.is_done ? '✓' : ''}
+            </div>
+            <div class="checklist-content">
+              <div class="checklist-text">
+                ${entry.typ === 'mangel' ? '⚠️' : entry.typ === 'erledigt' ? '✅' : '📝'} ${escapeHtml(entry.beschreibung)}
+              </div>
+              <div class="checklist-meta">Von ${entry.user_name}</div>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (e) {
+        console.error('Error loading entries:', e);
+      }
+    }
+
+    async function toggleEntry(entryId, isDone) {
+      try {
+        await sb.from('fahrzeug_eintraege').update({
+          is_done: isDone,
+          done_by: isDone ? user.name : null,
+          done_at: isDone ? new Date().toISOString() : null
+        }).eq('id', entryId);
+        loadEntries();
+      } catch (e) {
+        showToast('Fehler beim Aktualisieren', 'error');
+      }
+    }
+
+    async function loadActiveSessions() {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const { data, error } = await sb
+          .from('fahrzeug_sessions')
+          .select('*')
+          .eq('status', 'aktiv')
+          .gte('created_at', today + 'T00:00:00')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const container = document.getElementById('activeSessionsList');
+        if (!data || data.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-text">Keine aktiven Sessions</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = data.map(s => `
+          <a href="fahrzeug.html?session=${s.id}" class="card card-clickable">
+            <div class="card-header">
+              <div class="card-title">🚆 ${s.zugnummer}</div>
+              <span class="badge badge-${s.auftragsart === 'Störung' ? 'red' : 'blue'}">${s.auftragsart}</span>
+            </div>
+            <div class="card-body">
+              <div class="flex gap-2">
+                <span class="badge badge-green">${s.team}</span>
+                <span style="color: var(--text3); font-size: 0.85rem;">Von ${s.erstellt_von}</span>
+              </div>
+            </div>
+          </a>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading sessions:', e);
+      }
+    }
+  </script>
+</body>
+</html>

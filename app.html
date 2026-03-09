@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>S-Bahn Werkstatt Tool — Mein Tag</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="shared.js"></script>
+</head>
+<body>
+  <div id="topbar"></div>
+
+  <div class="page-wrapper">
+    <div class="content">
+      <div class="container">
+        <!-- Greeting -->
+        <div class="section">
+          <h1 id="greeting">Moin 👋</h1>
+          <p style="color: var(--text2);">Was steht heute an?</p>
+        </div>
+
+        <!-- Universal Search -->
+        <div class="section">
+          <div class="search-wrapper">
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input type="text" class="search-input" id="universalSearch" placeholder="Material, Fehler oder Zugnummer suchen..." autocomplete="off">
+            <button class="search-clear hidden" id="searchClear">✕</button>
+          </div>
+
+          <!-- Search Results -->
+          <div id="searchResults" class="hidden">
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">🔍 Suchergebnisse</span>
+              </div>
+              <div id="searchResultsContent"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="section">
+          <div class="quick-actions">
+            <a href="material.html" class="quick-action">
+              <div class="quick-action-icon">📦</div>
+              <div class="quick-action-label">Material</div>
+            </a>
+            <a href="fehler.html" class="quick-action">
+              <div class="quick-action-icon">🔴</div>
+              <div class="quick-action-label">Fehler</div>
+            </a>
+            <a href="fahrzeug.html" class="quick-action">
+              <div class="quick-action-icon">🚆</div>
+              <div class="quick-action-label">Fahrzeug</div>
+            </a>
+          </div>
+        </div>
+
+        <!-- Quick List (Wichtig) -->
+        <div class="section" id="quickListSection">
+          <div class="section-header">
+            <div class="section-title">
+              📌 Meine Merkliste
+            </div>
+            <a href="notizen.html" class="btn btn-sm btn-secondary">Alle anzeigen</a>
+          </div>
+          <div id="quickList">
+            <div class="empty-state">
+              <div class="empty-state-icon">📝</div>
+              <div class="empty-state-title">Keine Einträge</div>
+              <div class="empty-state-text">Füge schnelle Erinnerungen in den Notizen hinzu</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity Feed -->
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title">
+              📢 Neuigkeiten der Kollegen
+            </div>
+          </div>
+          <div id="activityFeed">
+            <div class="empty-state">
+              <div class="empty-state-icon">🔄</div>
+              <div class="empty-state-title">Lade Aktivitäten...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="section">
+          <div class="grid-3">
+            <div class="card">
+              <div class="card-title" style="color: var(--blue);">📦</div>
+              <div style="font-size: 1.5rem; font-weight: 700;"><span id="statMaterials">...</span></div>
+              <div class="card-subtitle">Materialien</div>
+            </div>
+            <div class="card">
+              <div class="card-title" style="color: var(--orange);">🔴</div>
+              <div style="font-size: 1.5rem; font-weight: 700;"><span id="statFehler">...</span></div>
+              <div class="card-subtitle">Fehler-Lösungen</div>
+            </div>
+            <div class="card">
+              <div class="card-title" style="color: var(--green);">📝</div>
+              <div style="font-size: 1.5rem; font-weight: 700;"><span id="statNotizen">...</span></div>
+              <div class="card-subtitle">Notizen</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Fahrzeug Sessions -->
+        <div class="section" id="activeSessionsSection">
+          <div class="section-header">
+            <div class="section-title">
+              🚆 Aktive Fahrzeuge
+              <span class="live-indicator">
+                <span class="live-dot"></span>
+                Live
+              </span>
+            </div>
+          </div>
+          <div id="activeSessions">
+            <div class="empty-state">
+              <div class="empty-state-text">Keine aktiven Fahrzeuge</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="bottomNav"></div>
+
+  <script>
+    const user = requireLogin();
+    if (!user) throw new Error('Not logged in');
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', () => {
+      initSupabase();
+      startPermissionCheck();
+
+      // Render UI
+      document.getElementById('topbar').innerHTML = renderTopbar('Mein Tag');
+      document.getElementById('bottomNav').innerHTML = renderBottomNav('home');
+
+      // Set greeting
+      const hour = new Date().getHours();
+      let greeting = 'Moin';
+      if (hour < 6) greeting = 'Gute Nacht';
+      else if (hour < 12) greeting = 'Guten Morgen';
+      else if (hour < 18) greeting = 'Moin';
+      else greeting = 'Guten Abend';
+      document.getElementById('greeting').textContent = greeting + ', ' + user.name.split(' ')[0] + ' 👋';
+
+      // Load data
+      loadQuickList();
+      loadActivityFeed();
+      loadStats();
+      loadActiveSessions();
+      setupSearch();
+    });
+
+    // Quick List
+    async function loadQuickList() {
+      try {
+        const { data, error } = await sb
+          .from('notes')
+          .select('*')
+          .eq('user_name', user.name)
+          .eq('type', 'wichtig')
+          .order('is_done', { ascending: true })
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (error) throw error;
+
+        const container = document.getElementById('quickList');
+        if (!data || data.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state" style="padding: 24px;">
+              <div class="empty-state-icon">📝</div>
+              <div class="empty-state-title">Keine Einträge</div>
+              <div class="empty-state-text">Füge schnelle Erinnerungen hinzu</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = data.map(item => `
+          <div class="checklist-item ${item.is_done ? 'done' : ''}" data-id="${item.id}">
+            <div class="checklist-checkbox ${item.is_done ? 'checked' : ''}" onclick="toggleQuickItem('${item.id}', ${!item.is_done})">
+              ${item.is_done ? '✓' : ''}
+            </div>
+            <div class="checklist-content">
+              <div class="checklist-text">${escapeHtml(item.content)}</div>
+              ${item.is_done ? `<div class="checklist-meta">✓ Erledigt${item.done_at ? ' ' + timeAgo(item.done_at) : ''}</div>` : ''}
+            </div>
+          </div>
+        `).join('');
+
+        // Add input for new item
+        container.innerHTML += `
+          <div class="checklist-item" style="border-style: dashed;">
+            <div class="checklist-checkbox" style="cursor: default;">+</div>
+            <div class="checklist-content">
+              <input type="text" class="form-input" id="quickItemInput" placeholder="Neue Erinnerung..." style="background: transparent; border: none; padding: 0;">
+            </div>
+          </div>
+        `;
+
+        document.getElementById('quickItemInput').addEventListener('keypress', async (e) => {
+          if (e.key === 'Enter') {
+            const value = e.target.value.trim();
+            if (!value) return;
+
+            try {
+              const { error } = await sb.from('notes').insert([{
+                user_name: user.name,
+                type: 'wichtig',
+                content: value
+              }]);
+
+              if (error) throw error;
+              loadQuickList();
+            } catch (err) {
+              showToast('Fehler beim Speichern', 'error');
+            }
+          }
+        });
+      } catch (e) {
+        console.error('Error loading quick list:', e);
+      }
+    }
+
+    async function toggleQuickItem(id, isDone) {
+      try {
+        await sb.from('notes').update({
+          is_done: isDone,
+          done_at: isDone ? new Date().toISOString() : null
+        }).eq('id', id);
+        loadQuickList();
+      } catch (e) {
+        showToast('Fehler beim Aktualisieren', 'error');
+      }
+    }
+
+    // Activity Feed
+    async function loadActivityFeed() {
+      try {
+        // Combine activities from different tables
+        const [materials, fehler, sessions] = await Promise.all([
+          sb.from('materials').select('*').order('created_at', { ascending: false }).limit(3),
+          sb.from('fehler').select('*').order('created_at', { ascending: false }).limit(3),
+          sb.from('fahrzeug_sessions').select('*').eq('status', 'aktiv').order('created_at', { ascending: false }).limit(3)
+        ]);
+
+        const activities = [];
+
+        if (materials.data) {
+          materials.data.forEach(m => {
+            activities.push({
+              type: 'material',
+              text: `📦 ${m.eingetragen} hat Material hinzugefügt: "${m.name}"`,
+              time: m.created_at
+            });
+          });
+        }
+
+        if (fehler.data) {
+          fehler.data.forEach(f => {
+            activities.push({
+              type: 'fehler',
+              text: `🔴 ${f.erstellt_von} hat einen Fehler eingetragen: "${f.title}"`,
+              time: f.created_at
+            });
+          });
+        }
+
+        if (sessions.data) {
+          sessions.data.forEach(s => {
+            activities.push({
+              type: 'fahrzeug',
+              text: `🚆 ${s.team} arbeitet an: ${s.zugnummer} (${s.auftragsart})`,
+              time: s.created_at
+            });
+          });
+        }
+
+        // Sort by time
+        activities.sort((a, b) => new Date(b.time) - new Date(a.time));
+        activities.splice(5);
+
+        const container = document.getElementById('activityFeed');
+        if (activities.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state" style="padding: 24px;">
+              <div class="empty-state-text">Noch keine Aktivitäten</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = activities.map(a => `
+          <div class="activity-item">
+            <div class="activity-avatar">
+              ${a.type === 'material' ? '📦' : a.type === 'fehler' ? '🔴' : '🚆'}
+            </div>
+            <div class="activity-content">
+              <div class="activity-text">${a.text}</div>
+              <div class="activity-time">${timeAgo(a.time)}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading activity:', e);
+      }
+    }
+
+    // Stats
+    async function loadStats() {
+      try {
+        const [materials, fehler, notizen] = await Promise.all([
+          sb.from('materials').select('*', { count: 'exact', head: true }),
+          sb.from('fehler').select('*', { count: 'exact', head: true }),
+          sb.from('notes').select('*', { count: 'exact', head: true })
+        ]);
+
+        document.getElementById('statMaterials').textContent = materials.count || 0;
+        document.getElementById('statFehler').textContent = fehler.count || 0;
+        document.getElementById('statNotizen').textContent = notizen.count || 0;
+      } catch (e) {
+        console.error('Error loading stats:', e);
+      }
+    }
+
+    // Active Sessions
+    async function loadActiveSessions() {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const { data, error } = await sb
+          .from('fahrzeug_sessions')
+          .select('*')
+          .eq('status', 'aktiv')
+          .gte('created_at', today + 'T00:00:00')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const container = document.getElementById('activeSessions');
+        if (!data || data.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state" style="padding: 24px;">
+              <div class="empty-state-text">Keine aktiven Fahrzeuge</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = data.map(s => `
+          <a href="fahrzeug.html?session=${s.id}" class="card card-clickable">
+            <div class="card-header">
+              <div class="card-title">
+                🚆 ${s.zugnummer}
+                <span class="badge badge-${s.auftragsart === 'Störung' ? 'red' : 'blue'}">${s.auftragsart}</span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div style="display: flex; gap: 12px; align-items: center;">
+                <span class="badge badge-green">${s.team}</span>
+                <span style="color: var(--text3); font-size: 0.85rem;">Gestartet von ${s.erstellt_von}</span>
+              </div>
+            </div>
+          </a>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading sessions:', e);
+      }
+    }
+
+    // Universal Search
+    function setupSearch() {
+      const searchInput = document.getElementById('universalSearch');
+      const searchClear = document.getElementById('searchClear');
+      const searchResults = document.getElementById('searchResults');
+      const searchResultsContent = document.getElementById('searchResultsContent');
+
+      let debounceTimer;
+
+      searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+
+        if (query.length > 0) {
+          searchClear.classList.remove('hidden');
+        } else {
+          searchClear.classList.add('hidden');
+          searchResults.classList.add('hidden');
+          return;
+        }
+
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(async () => {
+          await performSearch(query);
+        }, 300);
+      });
+
+      searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        searchClear.classList.add('hidden');
+        searchResults.classList.add('hidden');
+        searchInput.focus();
+      });
+
+      async function performSearch(query) {
+        try {
+          // Search in materials, fehler, and fahrzeug_sessions
+          const [materials, fehler, sessions] = await Promise.all([
+            sb.from('materials').select('*').ilike('name', `%${query}%`).limit(5),
+            sb.from('fehler').select('*').or(`title.ilike.%${query}%,beschreibung.ilike.%${query}%`).limit(5),
+            sb.from('fahrzeug_sessions').select('*').ilike('zugnummer', `%${query}%`).eq('status', 'aktiv').limit(5)
+          ]);
+
+          let html = '';
+
+          if (materials.data && materials.data.length > 0) {
+            html += `
+              <div class="mb-3">
+                <div style="font-size: 0.8rem; color: var(--text3); margin-bottom: 8px;">📦 Material (${materials.data.length})</div>
+                ${materials.data.map(m => `
+                  <a href="material.html?id=${m.id}" class="list-item">
+                    <div class="list-item-icon">📦</div>
+                    <div class="list-item-content">
+                      <div class="list-item-title">${escapeHtml(m.name)}</div>
+                      <div class="list-item-subtitle">SAP: ${m.sap || '-'} | ${m.shuttle || 'Kein Lager'}</div>
+                    </div>
+                  </a>
+                `).join('')}
+              </div>
+            `;
+          }
+
+          if (fehler.data && fehler.data.length > 0) {
+            html += `
+              <div class="mb-3">
+                <div style="font-size: 0.8rem; color: var(--text3); margin-bottom: 8px;">🔴 Fehler (${fehler.data.length})</div>
+                ${fehler.data.map(f => `
+                  <a href="fehler.html?id=${f.id}" class="list-item">
+                    <div class="list-item-icon">🔴</div>
+                    <div class="list-item-content">
+                      <div class="list-item-title">${escapeHtml(f.title)}</div>
+                      <div class="list-item-subtitle">${f.baureihe || 'Keine Baureihe'} | ${f.kategorie || 'Keine Kategorie'}</div>
+                    </div>
+                  </a>
+                `).join('')}
+              </div>
+            `;
+          }
+
+          if (sessions.data && sessions.data.length > 0) {
+            html += `
+              <div class="mb-3">
+                <div style="font-size: 0.8rem; color: var(--text3); margin-bottom: 8px;">🚆 Fahrzeuge (${sessions.data.length})</div>
+                ${sessions.data.map(s => `
+                  <a href="fahrzeug.html?session=${s.id}" class="list-item">
+                    <div class="list-item-icon">🚆</div>
+                    <div class="list-item-content">
+                      <div class="list-item-title">${s.zugnummer}</div>
+                      <div class="list-item-subtitle">${s.team} | ${s.auftragsart}</div>
+                    </div>
+                  </a>
+                `).join('')}
+              </div>
+            `;
+          }
+
+          if (!html) {
+            html = `<div class="empty-state" style="padding: 24px;">
+              <div class="empty-state-text">Keine Ergebnisse für "${escapeHtml(query)}"</div>
+            </div>`;
+          }
+
+          searchResultsContent.innerHTML = html;
+          searchResults.classList.remove('hidden');
+        } catch (e) {
+          console.error('Search error:', e);
+        }
+      }
+    }
+  </script>
+</body>
+</html>

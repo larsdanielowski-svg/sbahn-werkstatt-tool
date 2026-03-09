@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>S-Bahn Werkstatt Tool — Login</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="shared.js"></script>
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="login-logo-icon">🚂</div>
+        <h1>Werkstatt Tool</h1>
+        <p>S-Bahn ET-Werkstatt Frankfurt</p>
+      </div>
+
+      <div class="tabs" id="authTabs">
+        <button class="tab active" data-tab="login">🔓 Login</button>
+        <button class="tab" data-tab="code">🔑 Code</button>
+        <button class="tab" data-tab="request">📨 Anfragen</button>
+        <button class="tab" data-tab="admin">⚙️ Admin</button>
+      </div>
+
+      <!-- Login Tab -->
+      <div id="loginTab" class="auth-tab">
+        <form id="loginForm">
+          <div class="form-group">
+            <label class="form-label">Name</label>
+            <input type="text" class="form-input" name="name" placeholder="Max Mustermann" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Passwort</label>
+            <input type="password" class="form-input" name="password" placeholder="••••" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg">
+            Anmelden
+          </button>
+        </form>
+      </div>
+
+      <!-- Code Einlösen Tab -->
+      <div id="codeTab" class="auth-tab hidden">
+        <form id="codeForm">
+          <div class="form-group">
+            <label class="form-label">Einmal-Code</label>
+            <input type="text" class="form-input" name="code" placeholder="123456" maxlength="6" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Neues Passwort (min. 4 Zeichen)</label>
+            <input type="password" class="form-input" name="newPassword" placeholder="••••" minlength="4" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg">
+            Account aktivieren
+          </button>
+        </form>
+      </div>
+
+      <!-- Anfrage Tab -->
+      <div id="requestTab" class="auth-tab hidden">
+        <form id="requestForm">
+          <div class="form-group">
+            <label class="form-label">Dein Name</label>
+            <input type="text" class="form-input" name="name" placeholder="Max Mustermann" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Team</label>
+            <select class="form-select" name="team" required>
+              <option value="">Team wählen...</option>
+              <option value="Team 1">Team 1</option>
+              <option value="Team 2">Team 2</option>
+              <option value="Team 3">Team 3</option>
+              <option value="Team 4">Team 4</option>
+              <option value="Team 5">Team 5</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gewerk</label>
+            <select class="form-select" name="rolle" required>
+              <option value="">Gewerk wählen...</option>
+              <option value="Schlosser">🔧 Schlosser</option>
+              <option value="Elektroniker">⚡ Elektroniker</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg">
+            Zugang anfragen
+          </button>
+        </form>
+      </div>
+
+      <!-- Admin Tab -->
+      <div id="adminTab" class="auth-tab hidden">
+        <form id="adminForm">
+          <div class="form-group">
+            <label class="form-label">Admin-Passwort</label>
+            <input type="password" class="form-input" name="adminPassword" placeholder="••••••••" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg">
+            Als Admin anmelden
+          </button>
+        </form>
+      </div>
+
+      <div class="text-center mt-4">
+        <p class="text-sm" style="color: var(--text3); font-size: 0.85rem;">
+          <span id="randomSpruch"></span>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Check if already logged in
+    const user = getUser();
+    if (user) {
+      window.location.href = 'app.html';
+    }
+
+    // Show random spruch
+    document.getElementById('randomSpruch').textContent = getRandomSpruch();
+
+    // Tab switching
+    const tabs = document.querySelectorAll('#authTabs .tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        document.querySelectorAll('.auth-tab').forEach(content => {
+          content.classList.add('hidden');
+        });
+
+        const tabId = tab.dataset.tab + 'Tab';
+        document.getElementById(tabId).classList.remove('hidden');
+      });
+    });
+
+    // Login Form
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = getFormData('loginForm');
+
+      try {
+        const { data: users, error } = await sb
+          .from('users')
+          .select('*')
+          .eq('name', data.name)
+          .eq('password', data.password)
+          .eq('status', 'active')
+          .single();
+
+        if (error || !users) {
+          showToast('Login fehlgeschlagen. Name oder Passwort falsch.', 'error');
+          return;
+        }
+
+        if (users.is_blocked) {
+          showToast('Dein Account wurde gesperrt.', 'error');
+          return;
+        }
+
+        // Update last login
+        await sb.from('users').update({ last_login: new Date().toISOString() }).eq('id', users.id);
+
+        // Set user in localStorage
+        setUser({
+          id: users.id,
+          name: users.name,
+          team: users.team,
+          rolle: users.rolle,
+          role: users.role || 'user',
+          permission: users.permission || 'create',
+          blocked_features: users.blocked_features || []
+        });
+
+        showToast('Willkommen zurück, ' + users.name + '!', 'success');
+        window.location.href = 'app.html';
+      } catch (e) {
+        console.error('Login error:', e);
+        showToast('Ein Fehler ist aufgetreten', 'error');
+      }
+    });
+
+    // Code Form
+    document.getElementById('codeForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = getFormData('codeForm');
+
+      try {
+        const { data: users, error } = await sb
+          .from('users')
+          .select('*')
+          .eq('code', data.code)
+          .eq('status', 'approved')
+          .single();
+
+        if (error || !users) {
+          showToast('Code ungültig oder bereits verwendet', 'error');
+          return;
+        }
+
+        // Update password and activate account
+        const { error: updateError } = await sb
+          .from('users')
+          .update({
+            password: data.newPassword,
+            status: 'active',
+            code: null
+          })
+          .eq('id', users.id);
+
+        if (updateError) {
+          showToast('Fehler beim Aktivieren', 'error');
+          return;
+        }
+
+        showToast('Account aktiviert! Du kannst dich jetzt einloggen.', 'success');
+
+        // Switch to login tab
+        tabs[0].click();
+      } catch (e) {
+        console.error('Code activation error:', e);
+        showToast('Ein Fehler ist aufgetreten', 'error');
+      }
+    });
+
+    // Request Form
+    document.getElementById('requestForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = getFormData('requestForm');
+
+      try {
+        // Check if name already exists
+        const { data: existing } = await sb
+          .from('users')
+          .select('name')
+          .eq('name', data.name)
+          .maybeSingle();
+
+        if (existing) {
+          showToast('Dieser Name ist bereits vergeben', 'error');
+          return;
+        }
+
+        const { error } = await sb
+          .from('users')
+          .insert([{
+            name: data.name,
+            team: data.team,
+            rolle: data.rolle,
+            status: 'pending'
+          }]);
+
+        if (error) {
+          console.error('Request error:', error);
+          showToast('Fehler beim Senden der Anfrage', 'error');
+          return;
+        }
+
+        showToast('Zugang beantragt! Ein Admin wird dich freischalten.', 'success');
+        e.target.reset();
+      } catch (e) {
+        console.error('Request error:', e);
+        showToast('Ein Fehler ist aufgetreten', 'error');
+      }
+    });
+
+    // Admin Form
+    document.getElementById('adminForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = getFormData('adminForm');
+
+      if (data.adminPassword !== 'admin2026') {
+        showToast('Falsches Admin-Passwort', 'error');
+        return;
+      }
+
+      // Get admin user or create session
+      const { data: adminUser } = await sb
+        .from('users')
+        .select('*')
+        .eq('role', 'admin')
+        .limit(1)
+        .single();
+
+      if (adminUser) {
+        setUser({
+          id: adminUser.id,
+          name: adminUser.name,
+          team: adminUser.team,
+          rolle: adminUser.rolle,
+          role: 'admin',
+          permission: 'edit',
+          blocked_features: []
+        });
+      } else {
+        // Create temp admin session
+        setUser({
+          id: 'admin-temp',
+          name: 'Admin',
+          team: 'Admin',
+          rolle: 'Admin',
+          role: 'admin',
+          permission: 'edit',
+          blocked_features: []
+        });
+      }
+
+      showToast('Willkommen, Admin!', 'success');
+      window.location.href = 'admin.html';
+    });
+  </script>
+</body>
+</html>

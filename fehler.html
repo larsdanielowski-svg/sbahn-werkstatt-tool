@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>S-Bahn Werkstatt Tool — Fehler</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="shared.js"></script>
+</head>
+<body>
+  <div id="topbar"></div>
+
+  <div class="page-wrapper">
+    <div class="content">
+      <div class="container">
+
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title">🔴 Fehler-Wissensdatenbank</div>
+            <button class="btn btn-primary btn-sm" onclick="openModal('newFehlerModal')" id="btnNewFehler">➕ Neu</button>
+          </div>
+
+          <div class="search-wrapper">
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input type="text" class="search-input" id="fehlerSearch" placeholder="Fehler suchen..." autocomplete="off">
+          </div>
+
+          <div class="checkbox-group mb-3">
+            <button class="checkbox-item" data-filter="all">Alle</button>
+            <button class="checkbox-item" data-filter="423">BR 423</button>
+            <button class="checkbox-item" data-filter="425">BR 425</button>
+            <button class="checkbox-item" data-filter="430">BR 430</button>
+          </div>
+
+          <div id="fehlerList">
+            <div class="empty-state">
+              <div class="empty-state-icon">🔍</div>
+              <div class="empty-state-title">Suche nach Fehlern</div>
+              <div class="empty-state-text">Gib einen Begriff, Fehlercode oder Baureihe ein</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="bottomNav"></div>
+
+  <!-- New Fehler Modal -->
+  <div class="modal-overlay" id="newFehlerModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">➕ Neuer Fehler</div>
+        <button class="modal-close" onclick="closeModal('newFehlerModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="newFehlerForm">
+          <div class="form-group">
+            <label class="form-label">Titel *</label>
+            <input type="text" class="form-input" name="title" placeholder="z.B. ZSG Ausfall" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Beschreibung *</label>
+            <textarea class="form-textarea" name="beschreibung" placeholder="Detaillierte Beschreibung..." required></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Lösung</label>
+            <textarea class="form-textarea" name="loesung" placeholder="Was hat geholfen?"></textarea>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label class="form-label">Fehlercode</label>
+              <input type="text" class="form-input" name="fehlercode" placeholder="z.B. B001">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Zugnummer</label>
+              <input type="text" class="form-input" name="zugnummer" placeholder="z.B. 423 137">
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label class="form-label">Baureihe</label>
+              <select class="form-select" name="baureihe">
+                <option value="">Baureihe wählen...</option>
+                <option value="423">BR 423</option>
+                <option value="425">BR 425</option>
+                <option value="430">BR 430</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Kategorie</label>
+              <select class="form-select" name="kategorie">
+                <option value="">Kategorie wählen...</option>
+                <option value="ZSG">ZSG</option>
+                <option value="Türen">Türen</option>
+                <option value="Bremsen">Bremsen</option>
+                <option value="Klima">Klima</option>
+                <option value="Sonstiges">Sonstiges</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('newFehlerModal')">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="saveFehlerBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const user = requireLogin();
+    if (!user) throw new Error('Not logged in');
+
+    let currentFilter = 'all';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initSupabase();
+      startPermissionCheck();
+
+      document.getElementById('topbar').innerHTML = renderTopbar('Fehler');
+      document.getElementById('bottomNav').innerHTML = renderBottomNav('fehler');
+
+      if (!canCreate()) {
+        document.getElementById('btnNewFehler').classList.add('hidden');
+      }
+
+      setupFilters();
+      setupSearch();
+      setupForm();
+      loadFehler();
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const fehlerId = urlParams.get('id');
+      if (fehlerId) {
+        showToast('Fehler-Detail wird geladen...', 'info');
+      }
+    });
+
+    function setupFilters() {
+      const buttons = document.querySelectorAll('.checkbox-group .checkbox-item[data-filter]');
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          buttons.forEach(b => b.classList.remove('checked'));
+          btn.classList.add('checked');
+          currentFilter = btn.dataset.filter;
+          loadFehler();
+        });
+      });
+      buttons[0].classList.add('checked');
+    }
+
+    function setupSearch() {
+      const searchInput = document.getElementById('fehlerSearch');
+      let debounceTimer;
+
+      searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          loadFehler(query);
+        }, 300);
+      });
+    }
+
+    function setupForm() {
+      document.getElementById('saveFehlerBtn').addEventListener('click', async () => {
+        const formData = getFormData('newFehlerForm');
+
+        if (!formData.title || !formData.beschreibung) {
+          showToast('Titel und Beschreibung sind erforderlich', 'error');
+          return;
+        }
+
+        try {
+          const { error } = await sb.from('fehler').insert([{
+            title: formData.title,
+            beschreibung: formData.beschreibung,
+            loesung: formData.loesung || null,
+            fehlercode: formData.fehlercode || null,
+            zugnummer: formData.zugnummer || null,
+            baureihe: formData.baureihe || null,
+            kategorie: formData.kategorie || null,
+            erstellt_von: user.name
+          }]);
+
+          if (error) throw error;
+
+          showToast('Fehler eingetragen', 'success');
+          closeModal('newFehlerModal');
+          document.getElementById('newFehlerForm').reset();
+          loadFehler();
+        } catch (e) {
+          console.error('Error saving fehler:', e);
+          showToast('Fehler beim Speichern', 'error');
+        }
+      });
+    }
+
+    async function loadFehler(searchQuery = '') {
+      try {
+        let query = sb.from('fehler').select('*');
+
+        if (currentFilter !== 'all') {
+          query = query.eq('baureihe', currentFilter);
+        }
+
+        if (searchQuery) {
+          query = query.or(`title.ilike.%${searchQuery}%,beschreibung.ilike.%${searchQuery}%`);
+        }
+
+        query = query.order('created_at', { ascending: false });
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        const container = document.getElementById('fehlerList');
+
+        if (!data || data.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">🔴</div>
+              <div class="empty-state-title">Keine Fehler gefunden</div>
+              <div class="empty-state-text">${searchQuery ? 'Versuche einen anderen Suchbegriff' : 'Sei der Erste und trage einen Fehler ein'}</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = data.map(f => `
+          <div class="card card-clickable" onclick="showFehlerDetail('${f.id}')">
+            <div class="card-header">
+              <div class="card-title">${escapeHtml(f.title)}</div>
+            </div>
+            <div class="card-body">
+              <div class="flex gap-2 mb-2">
+                ${f.baureihe ? `<span class="tag">BR ${f.baureihe}</span>` : ''}
+                ${f.kategorie ? `<span class="tag">${f.kategorie}</span>` : ''}
+              </div>
+              <div style="color: var(--text2);">${truncate(f.beschreibung, 100)}</div>
+            </div>
+            <div class="card-footer">
+              <span style="color: var(--text3); font-size: 0.85rem;">Von ${f.erstellt_von} • ${timeAgo(f.created_at)}</span>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading fehler:', e);
+        showToast('Fehler beim Laden', 'error');
+      }
+    }
+
+    function showFehlerDetail(id) {
+      showToast('Detail-Ansicht kommt bald', 'info');
+    }
+  </script>
+</body>
+</html>
